@@ -1,11 +1,11 @@
 # Research Paper Analyzer — V1
 
-A locally-running web app that accepts a research paper (PDF, DOCX, or URL), sends it to **llama3:70b** via Ollama, and returns a structured summary with an interactive Q&A chain.
+A locally-running web app that accepts a research paper (PDF, DOCX, or URL), sends it to a local LLM via Ollama, and returns a structured summary with an interactive Q&A chain.
 
 ## Prerequisites
 
 - Python 3.10+
-- [Ollama](https://ollama.com/) with `llama3:70b` pulled
+- [Ollama](https://ollama.com/) with a model pulled (default: `llama3.1:8b`)
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ ollama serve
 Then pull the model (first time only):
 
 ```powershell
-ollama pull llama3:70b
+ollama pull llama3.1:8b
 ```
 
 `run.sh` will automatically point the app at the Windows host.
@@ -53,26 +53,46 @@ ollama pull llama3:70b
 V1/
 ├── app/                    # Python package
 │   ├── main.py             # FastAPI app + API endpoints (/load, /ask)
+│   ├── llm.py              # ChatOllama singleton (model config lives here)
+│   ├── state.py            # TypedDict schemas for LangGraph graphs
+│   ├── graph.py            # LangGraph graphs, prompt templates, node logic
 │   ├── document_loader.py  # URL / PDF / DOCX → plain text
-│   ├── llm_client.py       # Ollama wrapper (provider-agnostic interface)
 │   └── rag.py              # In-memory chunking + keyword retrieval
 ├── static/
 │   └── index.html          # Single-page app (HTML + CSS + JS)
 ├── scripts/
 │   ├── run.sh              # Linux/WSL start script (venv or uv, auto-detects Windows Ollama)
 │   └── run.ps1             # Windows start script
+├── config.toml             # Model selection (change [ollama].model here)
 ├── requirements.txt
 └── pyproject.toml          # uv-compatible dependency spec
 ```
 
+## Architecture
+
+Request flow:
+```
+browser → FastAPI (main.py)
+  → load_graph:  extract_text → build_index → summarize → (return)
+  → qa_graph:    retrieve → answer → (return)
+```
+
+- **`app/main.py`** — thin FastAPI wrapper; builds initial state dicts and invokes graphs via `asyncio.to_thread`. Holds a module-level `_state` dict (single-user cache for chunks).
+- **`app/llm.py`** — reads model from `config.toml` → `[ollama].model`; exports `llm = ChatOllama(...)` singleton.
+- **`app/state.py`** — `LoadState` and `QAState` TypedDicts used by LangGraph.
+- **`app/graph.py`** — two compiled LangGraph graphs plus prompt templates and response parsing. Each node short-circuits if a previous node set `error`.
+- **`app/document_loader.py`** — `load_document(source, source_type)` dispatches to URL/PDF/DOCX extractors.
+- **`app/rag.py`** — `build_index(text)` produces 500-word chunks with 50-word overlap; `retrieve(query, chunks)` scores by unique keyword overlap and returns top-5 in document order.
+
 ## Extensibility
 
-| What to change          | Where to look           |
-|-------------------------|-------------------------|
-| Swap LLM provider       | `llm_client.py` — change `PROVIDER` and implement the new `_*_generate()` function |
-| Upgrade to vector RAG   | `rag.py` — replace `build_index()` and `retrieve()` bodies; signatures stay the same |
-| Add new input formats   | `document_loader.py` — add a branch in `load_document()` |
-| New API endpoints       | `main.py`               |
+| What to change        | Where to look                                                         |
+|-----------------------|-----------------------------------------------------------------------|
+| Swap model            | `config.toml` — change `[ollama].model`                              |
+| Swap LLM provider     | `llm.py` — replace `ChatOllama` with another LangChain chat model    |
+| Upgrade to vector RAG | `rag.py` — replace `build_index()` and `retrieve()` bodies           |
+| Add new input formats | `document_loader.py` — add a branch in `load_document()`             |
+| New API endpoints     | `main.py` + new nodes/graph in `graph.py`                            |
 
 ## API
 
