@@ -7,13 +7,24 @@ Calling code uses only generate() and never touches provider-specific logic.
 
 import logging
 import os
+import tomllib
+from pathlib import Path
 import ollama
 
 logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 PROVIDER = "ollama"       # Change to "claude" to use Anthropic's API
-OLLAMA_MODEL = "llama3:70b"
+
+# Load model from config.toml; fall back to env var, then a hardcoded default
+_config_path = Path(__file__).parent.parent / "config.toml"
+if _config_path.exists():
+    with open(_config_path, "rb") as _f:
+        _config = tomllib.load(_f)
+    OLLAMA_MODEL = _config.get("ollama", {}).get("model", "llama3.1:8b")
+else:
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
+
 # Override with OLLAMA_HOST env var (e.g. "http://localhost:11434")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
