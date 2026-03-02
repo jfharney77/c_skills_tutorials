@@ -1,23 +1,54 @@
 """
-rag.py — In-memory chunking and keyword-based retrieval.
+rag.py — Chunking and FAISS vector-search retrieval.
 
-To upgrade to ChromaDB or another vector store, replace the bodies of
-build_index() and retrieve() while keeping their signatures identical.
+build_index() and retrieve() signatures are stable — the rest of the app
+never needs to change if you swap the retrieval backend here.
 """
 
-import re
+import logging
+import os
+import tomllib
+from pathlib import Path
 from typing import List, Dict
+
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+
+logger = logging.getLogger(__name__)
+
+# ── Embeddings ─────────────────────────────────────────────────────────────────
+
+_config_path = Path(__file__).parent.parent / "config.toml"
+_config: dict = {}
+if _config_path.exists():
+    with open(_config_path, "rb") as _f:
+        _config = tomllib.load(_f)
+
+_provider = _config.get("llm", {}).get("provider", "ollama")
+
+if _provider == "openai":
+    from langchain_openai import OpenAIEmbeddings
+    _embed_model = _config.get("openai", {}).get("embedding_model", "text-embedding-3-small")
+    _embeddings = OpenAIEmbeddings(model=_embed_model)
+else:
+    from langchain_ollama import OllamaEmbeddings
+    _embed_model = _config.get("ollama", {}).get("embedding_model", "nomic-embed-text")
+    _base_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    _embeddings = OllamaEmbeddings(model=_embed_model, base_url=_base_url)
+
+logger.info("RAG embeddings: provider=%s model=%s", _provider, _embed_model)
+
+# ── Vector store (module-level; replaced on each build_index call) ─────────────
+
+_vector_store: FAISS | None = None
 
 
 # ── Public interface ───────────────────────────────────────────────────────────
 
 def build_index(text: str, chunk_size: int = 500, overlap: int = 50) -> List[Dict]:
     """
-    Split text into overlapping word-based chunks and return an index.
-
-    Each chunk dict has:
-        id    (int)  — original position for stable re-ordering
-        text  (str)  — the chunk content
+    Split text into overlapping word-based chunks, embed them, and build a
+    FAISS index. Returns the chunk list (id + text) for use by retrieve().
 
     Args:
         text:       Full document text.
@@ -27,8 +58,11 @@ def build_index(text: str, chunk_size: int = 500, overlap: int = 50) -> List[Dic
     Returns:
         List of chunk dicts sorted by id.
     """
+    global _vector_store
+
     words = text.split()
     if not words:
+        _vector_store = None
         return []
 
     chunks = []
@@ -39,6 +73,11 @@ def build_index(text: str, chunk_size: int = 500, overlap: int = 50) -> List[Dic
         if start + chunk_size >= len(words):
             break
 
+    logger.info("Embedding %d chunks via %s (%s)...", len(chunks), _provider, _embed_model)
+    docs = [Document(page_content=c["text"], metadata={"id": c["id"]}) for c in chunks]
+    _vector_store = FAISS.from_documents(docs, _embeddings)
+    logger.info("FAISS index built.")
+
     return chunks
 
 
@@ -46,9 +85,8 @@ def retrieve(query: str, chunks: List[Dict], top_k: int = 5) -> str:
     """
     Return the most relevant chunks for a query as a single joined string.
 
-    Scoring: count of unique query keywords that appear in each chunk (case-insensitive).
-    Ties are broken by original chunk order. Results are re-sorted by original id
-    before joining so the returned context reads in document order.
+    Uses FAISS similarity search when an index is available, otherwise falls
+    back to keyword overlap scoring.
 
     Args:
         query:  The user's question.
@@ -61,9 +99,22 @@ def retrieve(query: str, chunks: List[Dict], top_k: int = 5) -> str:
     if not chunks:
         return ""
 
+    if _vector_store is not None:
+        results = _vector_store.similarity_search(query, k=top_k)
+        # Re-sort by original document order for coherent reading
+        results.sort(key=lambda d: d.metadata["id"])
+        return "\n\n---\n\n".join(d.page_content for d in results)
+
+    # Fallback: keyword overlap scoring
+    logger.warning("Vector store unavailable, falling back to keyword retrieval.")
+    return _keyword_retrieve(query, chunks, top_k)
+
+
+# ── Keyword retrieval fallback ─────────────────────────────────────────────────
+
+def _keyword_retrieve(query: str, chunks: List[Dict], top_k: int) -> str:
     keywords = _extract_keywords(query)
     if not keywords:
-        # Fall back to first top_k chunks if no keywords
         selected = chunks[:top_k]
     else:
         scored = []
@@ -71,17 +122,12 @@ def retrieve(query: str, chunks: List[Dict], top_k: int = 5) -> str:
             chunk_lower = chunk["text"].lower()
             score = sum(1 for kw in keywords if kw in chunk_lower)
             scored.append((score, chunk["id"], chunk))
-
         scored.sort(key=lambda x: (-x[0], x[1]))
         top = scored[:top_k]
-        # Re-sort by original document order for coherent reading
         top.sort(key=lambda x: x[1])
         selected = [item[2] for item in top]
-
     return "\n\n---\n\n".join(chunk["text"] for chunk in selected)
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 _STOPWORDS = {
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -101,9 +147,9 @@ _STOPWORDS = {
 
 
 def _extract_keywords(text: str) -> List[str]:
-    """Lowercase alphanum tokens, remove stopwords, deduplicate."""
+    import re
     tokens = re.findall(r"[a-z0-9]+", text.lower())
-    seen = set()
+    seen: set = set()
     keywords = []
     for token in tokens:
         if token not in _STOPWORDS and token not in seen and len(token) > 1:

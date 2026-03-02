@@ -1,20 +1,30 @@
 [llm]
 # Provider to use: "ollama" (local) or "openai"
-provider = "ollama"
+provider = "openai"
 
 [ollama]
-# Model to use for inference. Change this to swap models without touching code.
-# Popular options:
+# Chat model. Popular options:
 #   llama3.1:8b   — fast, good quality (~4.7 GB)
 #   llama3.2:3b   — very fast, lighter quality (~2 GB)
 #   llama3:70b    — best quality, very slow on laptops (~39 GB)
 #   mistral:7b    — fast alternative to llama (~4.1 GB)
 model = "llama3.1:8b"
 
+# Embedding model. Must be pulled separately: ollama pull nomic-embed-text
+# Popular options:
+#   nomic-embed-text   — fast, strong quality (~274 MB)
+#   mxbai-embed-large  — higher quality (~670 MB)
+embedding_model = "nomic-embed-text"
+
 [openai]
-# Model to use when provider = "openai".
-# API key is read from the OPENAI_API_KEY environment variable.
+# Chat model. API key is read from the OPENAI_API_KEY environment variable.
 # Popular options:
 #   gpt-4o-mini   — fast, low cost
 #   gpt-4o        — best quality
 model = "gpt-4o-mini"
+
+# Embedding model.
+# Popular options:
+#   text-embedding-3-small   — fast, low cost
+#   text-embedding-3-large   — higher quality
+embedding_model = "text-embedding-3-small"

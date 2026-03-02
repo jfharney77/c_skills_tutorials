@@ -4,21 +4,40 @@ set -e
 # Always run from the V1 project root regardless of where script is called from
 cd "$(dirname "$0")/.."
 
-# Resolve the Windows host IP (WSL2 default gateway)
-WINDOWS_IP=$(ip route show | grep default | awk '{print $3}')
-export OLLAMA_HOST="http://${WINDOWS_IP}:11434"
-
-echo "Windows host: ${WINDOWS_IP}"
-echo "OLLAMA_HOST:  ${OLLAMA_HOST}"
-
-# Verify Ollama is reachable
-if ! curl -sf "${OLLAMA_HOST}/api/tags" > /dev/null; then
-    echo ""
-    echo "ERROR: Cannot reach Ollama at ${OLLAMA_HOST}"
-    echo "Make sure Ollama is running on Windows with OLLAMA_HOST=0.0.0.0"
-    exit 1
+# Load .env if present
+if [ -f ".env" ]; then
+    set -a; source .env; set +a
+    echo "Loaded .env"
 fi
-echo "Ollama is reachable."
+
+# Read provider from config.toml (default: ollama)
+PROVIDER=$(python3 -c "
+import tomllib
+try:
+    with open('config.toml', 'rb') as f:
+        print(tomllib.load(f).get('llm', {}).get('provider', 'ollama'))
+except FileNotFoundError:
+    print('ollama')
+")
+echo "Provider: ${PROVIDER}"
+
+if [ "$PROVIDER" = "ollama" ]; then
+    # Resolve the Windows host IP (WSL2 default gateway)
+    WINDOWS_IP=$(ip route show | grep default | awk '{print $3}')
+    export OLLAMA_HOST="http://${WINDOWS_IP}:11434"
+
+    echo "Windows host: ${WINDOWS_IP}"
+    echo "OLLAMA_HOST:  ${OLLAMA_HOST}"
+
+    # Verify Ollama is reachable
+    if ! curl -sf "${OLLAMA_HOST}/api/tags" > /dev/null; then
+        echo ""
+        echo "ERROR: Cannot reach Ollama at ${OLLAMA_HOST}"
+        echo "Make sure Ollama is running on Windows with OLLAMA_HOST=0.0.0.0"
+        exit 1
+    fi
+    echo "Ollama is reachable."
+fi
 
 MODE=${1:-venv}
 
@@ -39,7 +58,7 @@ else
         python3 -m venv .venv
     fi
     source .venv/bin/activate
-    if ! python -c "import fastapi" &>/dev/null; then
+    if ! python -c "import fastapi, langchain_openai" &>/dev/null; then
         echo "Installing dependencies..."
         pip install -r requirements.txt
     fi
