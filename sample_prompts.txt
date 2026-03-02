@@ -1,0 +1,25 @@
+I want to create a system that will thoroughly discuss,
+describe, and analyze a research paper.  This will be V1.  All the code and 
+documentation should be placed in a folder called "V1".
+
+While I want Claude and its amazing frontier models to build this system,
+I want to use agents that use open source models like llama3:70b to help 
+execute any functionality.
+
+All documents to be input into the system will either be a word document or a 
+pdf file.
+
+The system should have a user interface that can ask me what paper i want to analyze, allowing
+me to enter either a url or a local file.   For now, lets include only a handful of 
+features and then make the code extensible enough to add new features.
+
+The first feature will be a submit button, that, when clicked, will load the contents
+of the given paper into memory (perhaps as part of RAG system).  The title, authors and 
+a three paragraph summary will be given immediately.  Follow that summary with a 
+horizontal spacer bar (<hr>) and then put in a text box that will allow me to ask questions about the document.
+A button will be placed next to that text box, and when that button is clicked, a response will be given below it,
+followed by a new text box and button.  This will continually be added as I enter more info into text boxes that are generated, or
+stop being added if I upload a new file.
+
+Lets plan it out!
+

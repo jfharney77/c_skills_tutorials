@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Research Paper Analyzer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      padding: 2rem 1rem;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.75rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+    h3 { font-size: 1.1rem; margin: 1rem 0 0.5rem; color: #444; }
+
+    /* ── Input section ── */
+    #input-section {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    #url-input, #file-input {
+      margin-bottom: 1rem;
+    }
+
+    input[type="text"], input[type="file"] {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px rgba(79,70,229,0.15);
+    }
+
+    button {
+      padding: 0.55rem 1.4rem;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover:not(:disabled) { background: #4338ca; }
+    button:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    #loading-msg {
+      display: inline-block;
+      margin-left: 1rem;
+      color: #555;
+      font-style: italic;
+    }
+
+    #error-msg {
+      margin-top: 0.75rem;
+      color: #dc2626;
+      font-size: 0.9rem;
+    }
+
+    /* ── Results section ── */
+    #results-section {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+
+    #authors-el {
+      color: #555;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+    }
+
+    #summary-el {
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+
+    hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5rem 0; }
+
+    /* ── Q&A ── */
+    #qa-container { display: flex; flex-direction: column; gap: 1rem; }
+
+    .qa-box { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .qa-box textarea {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      resize: vertical;
+      min-height: 70px;
+      font-family: inherit;
+    }
+
+    .qa-box textarea:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px rgba(79,70,229,0.15);
+    }
+
+    .qa-box textarea:disabled {
+      background: #f9fafb;
+      color: #444;
+    }
+
+    .ask-btn { align-self: flex-start; }
+
+    .answer {
+      background: #f0fdf4;
+      border-left: 3px solid #22c55e;
+      border-radius: 4px;
+      padding: 0.75rem 1rem;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      font-size: 0.95rem;
+    }
+
+    .answer-loading {
+      color: #555;
+      font-style: italic;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Research Paper Analyzer</h1>
+
+<!-- ── Input section ── -->
+<div id="input-section">
+  <div class="radio-group">
+    <label>
+      <input type="radio" name="mode" value="url" checked onchange="toggleMode()" />
+      URL
+    </label>
+    <label>
+      <input type="radio" name="mode" value="file" onchange="toggleMode()" />
+      Upload File
+    </label>
+  </div>
+
+  <div id="url-input">
+    <input id="url-field" type="text" placeholder="https://arxiv.org/pdf/..." />
+  </div>
+
+  <div id="file-input" hidden>
+    <input id="file-field" type="file" accept=".pdf,.docx" />
+  </div>
+
+  <button id="submit-btn" onclick="handleSubmit()">Analyze</button>
+  <span id="loading-msg" hidden>Analyzing paper… this may take a minute.</span>
+  <div id="error-msg" hidden></div>
+</div>
+
+<!-- ── Results section ── -->
+<div id="results-section" hidden>
+  <h2 id="title-el"></h2>
+  <p id="authors-el"></p>
+  <h3>Summary</h3>
+  <div id="summary-el"></div>
+  <hr />
+  <h3>Questions &amp; Answers</h3>
+  <div id="qa-container"></div>
+</div>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────────
+  let qaHistory = [];
+
+  // ── UI helpers ───────────────────────────────────────────────────────────────
+  function toggleMode() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    document.getElementById('url-input').hidden = (mode !== 'url');
+    document.getElementById('file-input').hidden = (mode !== 'file');
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  function clearError() {
+    const el = document.getElementById('error-msg');
+    el.textContent = '';
+    el.hidden = true;
+  }
+
+  function setLoading(on) {
+    document.getElementById('loading-msg').hidden = !on;
+    document.getElementById('submit-btn').disabled = on;
+  }
+
+  // ── Submit / load document ───────────────────────────────────────────────────
+  async function handleSubmit() {
+    clearError();
+
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const formData = new FormData();
+
+    if (mode === 'url') {
+      const url = document.getElementById('url-field').value.trim();
+      if (!url) { showError('Please enter a URL.'); return; }
+      formData.append('url', url);
+    } else {
+      const fileInput = document.getElementById('file-field');
+      if (!fileInput.files.length) { showError('Please select a file.'); return; }
+      formData.append('file', fileInput.files[0]);
+    }
+
+    setLoading(true);
+    document.getElementById('results-section').hidden = true;
+
+    try {
+      const res = await fetch('/load', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.detail || 'Server error. Please try again.');
+        return;
+      }
+
+      // Populate results
+      document.getElementById('title-el').textContent = data.title;
+      document.getElementById('authors-el').textContent = data.authors ? `Authors: ${data.authors}` : '';
+      document.getElementById('summary-el').textContent = data.summary;
+      document.getElementById('results-section').hidden = false;
+
+      // Reset Q&A
+      qaHistory = [];
+      document.getElementById('qa-container').innerHTML = '';
+      appendQABox(0);
+
+    } catch (err) {
+      showError('Network error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Q&A chain ────────────────────────────────────────────────────────────────
+  function appendQABox(index) {
+    const container = document.getElementById('qa-container');
+
+    const box = document.createElement('div');
+    box.className = 'qa-box';
+    box.id = `qa-box-${index}`;
+
+    const textarea = document.createElement('textarea');
+    textarea.id = `q-${index}`;
+    textarea.placeholder = 'Ask a question about this paper…';
+
+    // Allow Shift+Enter for newline; Enter alone submits
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        askQuestion(index);
+      }
+    });
+
+    const btn = document.createElement('button');
+    btn.id = `ask-btn-${index}`;
+    btn.className = 'ask-btn';
+    btn.textContent = 'Ask';
+    btn.onclick = () => askQuestion(index);
+
+    box.appendChild(textarea);
+    box.appendChild(btn);
+    container.appendChild(box);
+
+    // Scroll new box into view and focus
+    textarea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    textarea.focus();
+  }
+
+  async function askQuestion(index) {
+    const textarea = document.getElementById(`q-${index}`);
+    const btn = document.getElementById(`ask-btn-${index}`);
+    const question = textarea.value.trim();
+
+    if (!question) return;
+
+    // Lock the input
+    textarea.disabled = true;
+    btn.disabled = true;
+
+    // Show loading placeholder
+    const box = document.getElementById(`qa-box-${index}`);
+    const loadingEl = document.createElement('div');
+    loadingEl.className = 'answer-loading';
+    loadingEl.textContent = 'Thinking…';
+    box.appendChild(loadingEl);
+
+    try {
+      const res = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, history: qaHistory }),
+      });
+      const data = await res.json();
+
+      // Remove loading placeholder
+      box.removeChild(loadingEl);
+
+      if (!res.ok) {
+        const errEl = document.createElement('div');
+        errEl.className = 'answer';
+        errEl.style.borderLeftColor = '#dc2626';
+        errEl.style.background = '#fef2f2';
+        errEl.textContent = data.detail || 'Error getting answer.';
+        box.appendChild(errEl);
+        // Re-enable so user can retry
+        textarea.disabled = false;
+        btn.disabled = false;
+        return;
+      }
+
+      const answer = data.answer;
+
+      // Display answer
+      const answerEl = document.createElement('div');
+      answerEl.className = 'answer';
+      answerEl.textContent = answer;
+      box.appendChild(answerEl);
+
+      // Update history and continue chain
+      qaHistory.push({ question, answer });
+      appendQABox(index + 1);
+
+    } catch (err) {
+      box.removeChild(loadingEl);
+      const errEl = document.createElement('div');
+      errEl.className = 'answer';
+      errEl.style.borderLeftColor = '#dc2626';
+      errEl.style.background = '#fef2f2';
+      errEl.textContent = 'Network error: ' + err.message;
+      box.appendChild(errEl);
+      textarea.disabled = false;
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
