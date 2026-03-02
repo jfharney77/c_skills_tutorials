@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo is a sandbox for practicing Claude Code skills. Each versioned subdirectory (`V1/`, `V2/`, …) is a self-contained project built during a session.
 
+### Projects
+
+| Version | Name | Description |
+|---|---|---|
+| `V1/` | Research Paper Analyzer | Upload or link a research paper (PDF, DOCX, or URL) and get a structured summary plus an interactive Q&A interface powered by a local LLM via Ollama. |
+
 ## V1 — Research Paper Analyzer
 
 ### Running the app
